@@ -1,6 +1,6 @@
 # Introduction to the P4Runtime API
 
-In the last lab activity you were introduced to the P4 language and you implement a static P4 Ethernet switch. In this activity you will learn how to implement a P4 controller in Python and implement a basic learning switch. To ease your way into P4 controllers, we will discuss the P4Runtime API, which is used to control P4-programmable switches at runtime. We will use the basic interactions between a P4 controller and a P4-programmable switch to provide an example of how the API works and how to use it. Treat this tutorial as an introduction to GRPC, but not a complete guide. You can find more information about GRPC and Protobuf in the links provided below. 
+In the last lab activity you were introduced to the P4 language and you implement a static P4 Ethernet switch. In this activity you will learn how to implement a P4 controller in Python and implement a basic learning switch. To ease your way into P4 controllers, we will discuss the P4Runtime API, which is used to control P4-programmable switches at runtime. We will use the basic interactions between a P4 controller and a P4-programmable switch to provide an example of how the API works and how to use it. Treat this tutorial as an introduction to GRPC, but not a complete guide. You can find more information about GRPC and Protobuf in the links provided below.
 
 By the end of this activity you will be able to:
 
@@ -139,5 +139,205 @@ message StreamMessageResponse {
     StreamError error = 6;
   }
 }
+```
+
+## Task 1: Configure a switch with the P4Runtime API
+
+In the first lab of this module, we revisited how a learning switch works and identified two key functionalities: Flood and MAC learning. Flooding is essential for ensuring that packets reach all possible destinations when the destination MAC address is unknown. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations.
+
+In this first task, we will extend our P4 static switch and add the ability to flood packets to the switch ports. To achieve this, we will need to use the P4Runtime API to configure a multicast group on the switch. A multicast group is a virtual port, to which we can send a packet using the `standard_metadata.mcast_grp` field in the Ingress block. A controller can add multiple switch ports to a multicast group, and the switch will forward packets to all the group ports simultaneously, if `mcast_grp` is set. We will use the `Write` RPC method to create a multicast group entry to the switch's forwarding table.
+
+To realize this functionality, we will use the `s1-runtime.json` file provided in this repository. We have already created an entry to hold the required information to create the multicast group. The relevant section of the `s1-runtime.json` file is shown below:
+
+```json
+  "multicast_group_entries": [
+    {
+      "multicast_group_id": 1,
+      "replicas": [
+        {
+          "egress_port": 1,
+          "instance": 1
+        },
+        {
+          "egress_port": 2,
+          "instance": 1
+        },
+        {
+          "egress_port": 3,
+          "instance": 1
+        },
+        {
+          "egress_port": 4,
+          "instance": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+In order to understand the multicast group on the switch we need to study the protobuf definition of the `Write` RCP call and the `PacketReplicationEngineEntry` message, which is used to define multicast groups on the switch. The relevant section of the `p4runtime.proto` file is shown below:
+
+```protobuf
+
+service P4Runtime {
+  // Update one or more P4 entities on the target.
+  rpc Write(WriteRequest) returns (WriteResponse) {
+  }
+}
+
+message WriteRequest {
+  uint64 device_id = 1;
+  uint64 role_id = 2 [deprecated=true];
+  string role = 6;
+  Uint128 election_id = 3;
+  // The write batch, comprising a list of Update operations. The P4Runtime
+  // server may arbitrarily reorder messages within a batch to maximize
+  // performance.
+  repeated Update updates = 4;
+  enum Atomicity {
+    // Required. This is the default behavior. The batch is processed in a
+    // non-atomic manner from a data plane point of view. Each operation within
+    // the batch must be attempted even if one or more encounter errors.
+    // Every data plane packet is guaranteed to be processed according to
+    // table contents as they are between two individual operations of the
+    // batch, but there could be several packets processed that see each of
+    // these intermediate stages.
+    CONTINUE_ON_ERROR = 0;
+    // Optional. Operations within the batch are committed to data plane until
+    // an error is encountered. At this point, the operations must be rolled
+    // back such that both software and data plane state is consistent with the
+    // state before the batch was attempted. The resulting behavior is
+    // all-or-none, except the batch is not atomic from a data plane point of
+    // view. Every data plane packet is guaranteed to be processed according to
+    // table contents as they are between two individual operations of the
+    // batch, but there could be several packets processed that see each of
+    // these intermediate stages.
+    ROLLBACK_ON_ERROR = 1;
+    // Optional. Every data plane packet is guaranteed to be processed according
+    // to table contents before the batch began, or after the batch completed
+    // and the operations were programmed to the hardware.
+    // The batch is therefore treated as a transaction. 
+    DATAPLANE_ATOMIC = 2;
+  }
+  Atomicity atomicity = 5;
+}
+
+message Update {
+  enum Type {
+    UNSPECIFIED = 0;
+    INSERT = 1;
+    MODIFY = 2;
+    DELETE = 3;
+  }
+  Type type = 1;
+  Entity entity = 2;
+}
+
+message Entity {
+  oneof entity {
+    ExternEntry extern_entry = 1;
+    TableEntry table_entry = 2;
+    ActionProfileMember action_profile_member = 3;
+    ActionProfileGroup action_profile_group = 4;
+    MeterEntry meter_entry = 5;
+    DirectMeterEntry direct_meter_entry = 6;
+    CounterEntry counter_entry = 7;
+    DirectCounterEntry direct_counter_entry = 8;
+    PacketReplicationEngineEntry packet_replication_engine_entry = 9;
+    ValueSetEntry value_set_entry = 10;
+    RegisterEntry register_entry = 11;
+    DigestEntry digest_entry = 12;
+  }
+}
+
+// Only one instance of a Packet Replication Engine (PRE) is expected in the
+// P4 pipeline. Hence, no instance id is needed to access the PRE.
+message PacketReplicationEngineEntry {
+  oneof type {
+    MulticastGroupEntry multicast_group_entry = 1;
+    CloneSessionEntry clone_session_entry = 2;
+  }
+}
+
+// Used for replicas created for cloning and multicasting actions.
+message Replica {
+  oneof port_kind {
+    // Using uint32 as ports is deprecated, use port field instead.
+    uint32 egress_port = 1 [deprecated=true];
+    bytes port = 3;
+  }
+  uint32 instance = 2;
+}
+
+// The (port, instance) pair must be unique for each replica in a given
+// multicast group entry. A packet may be multicast by setting the
+// multicast_group field of PSA ingress output metadata to multicast_group_id
+// of a programmed multicast group entry. The port and instance fields of each
+// replica's egress input metadata will be set to the respective values
+// programmed in the multicast group entry.
+message MulticastGroupEntry {
+  uint32 multicast_group_id = 1;
+  repeated Replica replicas = 2;
+}
 
 ```
+
+This looks complicated, but don't worry. To create a multicast group on the switch, we need to create a `WriteRequest` message that contains an `Update` message with the `PacketReplicationEngineEntry` entity type. The `PacketReplicationEngineEntry` message should contain multiplr `MulticastGroupEntry` message, one for each switch port, that defines the multicast group ID and the list of replicas (egress ports) that are part of the group.
+
+The Protobuf compiler generates Python classes for all the Protobuf messages defined in the `p4runtime.proto` file. You can use these classes to create the required messages to create a multicast group on the switch and the code can be found under `util/lib/p4/v1/p4runtime_pb2.py`. We also provide for you a small helper funcion, which abstract further the creation of the protobuf messages. You can find this function in the file `util/p4runtime_lib/helper.py`. We also have a similar file for the P4rutime API, in file `util/p4runtime_lib/switch.py`. Below is the helper function that you can use to create the multicast group entry:
+
+```python
+# get mc_group_entry
+def buildMCEntry(self, mc_group_id, replicas=None):
+    mc_entry = p4runtime_pb2.PacketReplicationEngineEntry()
+    mc_entry.multicast_group_entry.multicast_group_id = mc_group_id
+    if replicas:
+        mc_entry.multicast_group_entry.replicas.extend(
+            [
+                self.get_replicas_pb(replica["egress_port"], replica["instance"])
+                for replica in replicas
+            ]
+        )
+    return mc_entry
+```
+
+To create the multicast group on the switch, you can use the `buildMCEntry` helper function. The code creates a `PacketReplicationEngineEntry` message object, to which for each replica defined in the `s1-runtime.json` file, it adds a `Replica` message to the `MulticastGroupEntry` message. `Replicas` is a Python List, to which you can `append()` multiple replicas (or `extend()` with the content of the other lists), each defined as a dictionary with the `egress_port` and `instance` fields.
+
+Once the message is created, you can use the `WritePREEntry` RPC method to send the message to the switch. Below is the code of the `WritePREEntry()` method, which you can find in the `util/p4runtime_lib/switch.py` file:
+
+```python
+def WritePREEntry(self, pre_entry, dry_run=False):
+    request = p4runtime_pb2.WriteRequest()
+    request.device_id = self.device_id
+    request.election_id.low = 1
+    update = request.updates.add()
+    update.type = p4runtime_pb2.Update.INSERT
+    update.entity.packet_replication_engine_entry.CopyFrom(pre_entry)
+    if dry_run:
+        print("P4Runtime Write:", request)
+    else:
+        self.client_stub.Write(request)
+```
+
+The `WritePREEntry()` method creates a `WriteRequest` message, sets the device ID and election ID, and adds an `Update` message to the request. The `Update` message is of type `INSERT`, and it contains the `PacketReplicationEngineEntry` message created earlier. Finally, the method sends the `WriteRequest` message to the switch using the `Write` RPC method.
+
+You should also update your `main.p4` file to use the multicast group when forwarding packets as the default action of your ingress control block. The current code use the action `NoAction` as default on the mac table. You should replace that with a new `broadcast()` action that sets the `standard_metadata.mcast_grp` field in the standard_metadata structure to 1, in order to send the packet through the new multicast group. Finally, it is important when you flood a packet to the network, to avoid sending the packet back to the port, to where you received this packet. This can be cststrophic when you connect two learning switches together, as a single packet packet with an unknown destination MAC address can create a broadcast storm that can congest the entire network. To avoid this, you should modify the `MyEgress` control block and drop packets that are destined to the port from which we received a packet. The `MyEgress` control block is executed after the packests ahve been copied and send to the egress ports. If you have a switch with 4 port and you received a packet with an unknown destination MAC address, then the `MyEgress` block will be execute 4 times, once for each egress port and for each packet the `egress_port` field will have the value of the corresponding egress port. The `MyEgress` control block should compare the `egress_port` field in the `standard_metadata` structure with the `ingress_port` field, and if they are equal, drop the packet. Otherwise, you should not perform any operations on the pakcet.
+
+We have created for you a skeleton controller code, which you can find in the file `controller.py`. The code at the moment simple connects to a P4 switch, load the P4 compiled code and terminates. Your task is to extend the `main()` method and add the multicast_group state defined in the `mininet/s1-runtime.json` file in the `s1` P4 switch.  You can use the `buildMCEntry()` helper function to create the `PacketReplicationEngineEntry` message and the `WritePREEntry()` method to send the message to the switch.
+
+To validate that your controller and p4 program work correctly, you should be able to pingall the devices in your network and see that all packets are being flooded to all switch ports (e.g., run wireshark on a host device and check what packet are received on the host network interface).
+
+## Task 2: Implement MAC learning with the P4Runtime API
+
+In the second task, we will implement MAC learning on our P4 switch using the P4Runtime API. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations. To achieve this functionality, you will need two functionalities: receive packets from the switch and add table entries to the switch.
+
+Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets.
+
+To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method.
+
+PacketIn messages are used by the switch to send packets to the controller. The switch has a special port called the CPU port, which is used to send packets to the controller. The CPU port number is defined at boot time and 
+
+To receive packets from the switch, we will use the `StreamChannel` RPC method to establish a bidirectional stream between the controller and the switch. The switch will use this stream to send packets to the controller using `PacketIn` messages. The controller will need to listen for these messages and process them accordingly. You can find the relevant section of the `p4runtime.proto` file below:
+
+```protobuf
