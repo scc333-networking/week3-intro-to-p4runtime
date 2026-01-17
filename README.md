@@ -141,7 +141,7 @@ message StreamMessageResponse {
 }
 ```
 
-## Task 1: Configure a switch with the P4Runtime API
+## Task 1: Configure a switch using the P4Runtime API
 
 In the first lab of this module, we revisited how a learning switch works and identified two key functionalities: Flood and MAC learning. Flooding is essential for ensuring that packets reach all possible destinations when the destination MAC address is unknown. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations.
 
@@ -322,22 +322,172 @@ def WritePREEntry(self, pre_entry, dry_run=False):
 
 The `WritePREEntry()` method creates a `WriteRequest` message, sets the device ID and election ID, and adds an `Update` message to the request. The `Update` message is of type `INSERT`, and it contains the `PacketReplicationEngineEntry` message created earlier. Finally, the method sends the `WriteRequest` message to the switch using the `Write` RPC method.
 
+> Step 1: Extend your P4 program to ceate a multicast group including all switch port. 
+
 You should also update your `main.p4` file to use the multicast group when forwarding packets as the default action of your ingress control block. The current code use the action `NoAction` as default on the mac table. You should replace that with a new `broadcast()` action that sets the `standard_metadata.mcast_grp` field in the standard_metadata structure to 1, in order to send the packet through the new multicast group. Finally, it is important when you flood a packet to the network, to avoid sending the packet back to the port, to where you received this packet. This can be cststrophic when you connect two learning switches together, as a single packet packet with an unknown destination MAC address can create a broadcast storm that can congest the entire network. To avoid this, you should modify the `MyEgress` control block and drop packets that are destined to the port from which we received a packet. The `MyEgress` control block is executed after the packests ahve been copied and send to the egress ports. If you have a switch with 4 port and you received a packet with an unknown destination MAC address, then the `MyEgress` block will be execute 4 times, once for each egress port and for each packet the `egress_port` field will have the value of the corresponding egress port. The `MyEgress` control block should compare the `egress_port` field in the `standard_metadata` structure with the `ingress_port` field, and if they are equal, drop the packet. Otherwise, you should not perform any operations on the pakcet.
 
 We have created for you a skeleton controller code, which you can find in the file `controller.py`. The code at the moment simple connects to a P4 switch, load the P4 compiled code and terminates. Your task is to extend the `main()` method and add the multicast_group state defined in the `mininet/s1-runtime.json` file in the `s1` P4 switch.  You can use the `buildMCEntry()` helper function to create the `PacketReplicationEngineEntry` message and the `WritePREEntry()` method to send the message to the switch.
+
+> Step 2: Extend the main.p4 file to include an `action broadcast()` that sets the `standard_metadata.mcast_grp` field to 1 and modify the `MyEgress` control block to drop packets that are being flooded to the ingress port.
 
 To validate that your controller and p4 program work correctly, you should be able to pingall the devices in your network and see that all packets are being flooded to all switch ports (e.g., run wireshark on a host device and check what packet are received on the host network interface).
 
 ## Task 2: Implement MAC learning with the P4Runtime API
 
-In the second task, we will implement MAC learning on our P4 switch using the P4Runtime API. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations. To achieve this functionality, you will need two functionalities: receive packets from the switch and add table entries to the switch.
+In the second task, we will implement MAC learning on our P4 switch using the P4Runtime API and a Python controller. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations. To achieve this functionality, you will need two functionalities: receive packets from the switch and add table entries to the switch. Figure 2 provides a schematic of that we aim to achieve in this task.
 
-Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets.
+![Figure 2: Example interaction between the controller and the switch for a packet with an unknown destination MAC address. ](.resources/Lecture%2015+16%20-%20BeyondOpenFlow.gif)
 
-To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method.
+The switch implementation from last week, relies on a single table to forward packets. In order to realise the learning functionality, we need an additional table to keep track of known and unknown MAC address. If the source MAC address is present in the table, then the MAC address is known and we can use the forwarding table to process the packet for fowarding. If the MAC is unknown, then the packet must be sent to the controller, suing the CPU_PORT value as the egress_port.
 
-PacketIn messages are used by the switch to send packets to the controller. The switch has a special port called the CPU port, which is used to send packets to the controller. The CPU port number is defined at boot time and 
+> Task 2: Add an smac table in the My Ingress stage. The table should implement a default action called `learn`, which will set the egress_port to CPU_PORT. You should also modify the apply code of the block. A packet must be first looked up in the `smac` table. If a match is found (smac.apply().hit is true), then the packet should also be looked up in the dmac for a forwarding action and send to the next stage of the pipeline. If the MAC is not found in smac, then no further actions should be applied to the packet, so that the packet is sent to the next stage.
 
-To receive packets from the switch, we will use the `StreamChannel` RPC method to establish a bidirectional stream between the controller and the switch. The switch will use this stream to send packets to the controller using `PacketIn` messages. The controller will need to listen for these messages and process them accordingly. You can find the relevant section of the `p4runtime.proto` file below:
+Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets. To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method. This can be achieved using the special port number 255 or the constant CPU_PORT.
+
+To effectively learn the new MAC address, we need to also create a new custom header, which will be send to the controller, containing the ingress_port of the packet. We explain how this functionality works in the next subsection.
+
+### Understanding Controller Headers: Packet-In and Packet-Out
+
+Before we proceed, it's important to understand how packets are exchanged between the P4 controller and the P4 data plane. The P4Runtime API provides a mechanism for bidirectional packet I/O between the controller and the switch using special controller headers.
+
+#### What are Controller Headers?
+
+A **controller header** is a special P4 header that is annotated with the `@controller_header` annotation. These headers carry metadata between the P4 data plane and the controller, enabling communication about packet processing decisions. Their definition is not different from the Ethernet packet and you can define the individual fields using the same syntax. The new header **should** be included in the headers structure. Controller headers are unique in that they are only meaningful at the boundary between the data plane and the control plane—they are not part of the actual packet forwarding on the network.
+
+There are two types of controller headers:
+
+1. **`@controller_header("packet_in")`** – Used for packets going INTO the controller FROM the data plane. When the P4 program sends a packet to the controller (e.g., to the CPU port), any header annotated with this annotation will be included in the `PacketIn` message. This allows the data plane to communicate important metadata to the controller, such as the ingress port where the packet arrived.
+
+2. **`@controller_header("packet_out")`** – Used for packets going OUT from the controller TO the data plane. When the controller sends a packet back to the switch, it uses the `PacketOut` message to specify metadata (via this header) that tells the data plane what to do with the packet, such as the egress port where it should be forwarded.
+
+#### Example: Packet-In and Packet-Out Headers
+
+In the P4 program, these headers might be defined as follows:
+
+```p4
+@controller_header("packet_in")
+header packet_in_t {
+    bit<7> pad;
+    bit<9> ingress_port;  // The port where the packet arrived
+}
+
+@controller_header("packet_out")
+header packet_out_t {
+    bit<7> p,,ad;
+    bit<9> egress_port;   // The port where the packet should be sent
+}
+```
+
+In order include the header in a packet, we need first to user the header structure and call the setValid() function in any control block, e.g. as part of the learn action you can add the following line:
+
+```p4
+headers.packet_in_hdr.setValid();
+```
+
+and the in the deparser block you need to add the header to the packet:
+
+```p4 
+if (headers.packet_in_hdr.isValid()) {
+    packet.emit(headers.packet_in_hdr);
+}
+```
+
+#### How They Work Together
+
+- **Packet-In**: When the P4 program needs to send a packet to the controller (e.g., because the destination MAC is unknown), it prepends the `packet_in_t` header to the packet and sends it to the CPU port. The controller receives this in a `PacketIn` message, which includes the metadata from the `packet_in_t` header, allowing the controller to know which port the packet arrived on.
+
+- **Packet-Out**: After the controller makes a forwarding decision and wants to send the packet back to the data plane, it creates a `PacketOut` message with the packet payload and sets the metadata using the `packet_out_t` header fields to specify the egress port.
+
+### Key Constraints
+
+- At most **one header** can be annotated with `@controller_header("packet_in")`
+- At most **one header** can be annotated with `@controller_header("packet_out")`
+- These headers are automatically handled by P4Runtime and are not part of the normal packet processing pipeline
+
+> Step 3: Define a `@controller_header("packet_in")` annotation in the P4 program to carry the ingress port information for packets sent to the controller. Modify the controller code to handle `PacketIn` messages, extract the ingress port from the controller header, and use this information to learn MAC addresses and add entries to the forwarding table. Update the `metadata structure` to contain the same fields as the PacketIn header. Make sure the P4 program sets the `ingress_port` field in the `packet_in` header when sending packets to the controller and that the header is set to valid before sending the packet to the CPU port.
+
+> Step 4: Update the MyDeparse code to emit the packet_in header if it is valid.
+
+The final step now is part of our controller code. If you have carefully studied the `p4runtime.proto` file, you will notice that the `PacketIn` message contains a `metadata` field, which contains the metadata associated with the packet. The metadata is defined using the `PacketMetadata` message, which contains the metadata ID and the metadata value. The metadata ID is defined in the P4 program using the `@controller_header("packet_in")` annotation. The P4Info file generated by the p4c compiler contains the mapping between the metadata ID and the header fields defined in the P4 program. You can use this mapping to extract the ingress port from the `PacketIn` message received from the switch.
+
+You will need to modify the controller code to handle `PacketIn` messages received from the switch. When a `PacketIn` message is received, the controller should extract the ingress port from the `packet_in` header and use this information to learn the source MAC address of the packet. The controller should then add an entry to the `smac` table in the switch, associating the source MAC address with the ingress port. You can use the `WriteTableEntry` method provided in the `util/p4runtime_lib/switch.py` file to add entries to the switch's forwarding table.
+
+## Task 3: Injecting packets to the data plane
+
+If we test our current learning switch implementation, you will notice that the first packet sent to a host with an unknown destination MAC address will not be delivered, since the packet is sent to the controller, which learns the source MAC address and adds the corresponding table entry, but the original packet is dropped. To solve this issue, we can adopt two options for our switch. One approach can be to clone the packet in the data plane and send a copy to the controller for MAC learning, while forwarding the original packet to the multicast group for flooding. This is the most efficient approach and we will leave the solution as an optional exercise for you to implement. The solution requires from the controller to create a clone session on the switch using the `PacketReplicationEngineEntry` message type, similar to what we did in Task 1 for the multicast group. The clone session will define two replicas: one for the CPU port and one for the multicast group. The P4 program will need to be modified to use the clone action instead of sending the packet to the controller directly.
+
+The second approach, which we will implement in this task, is to have the controller re-inject the packet back into the data plane after learning the source MAC address. This approach is less efficient, as it requires additional communication between the controller and the switch, but it will allow us to understand better the P4Runtime API and how to use it to inject packets into the data plane.
+
+The base idea that we will follow is that we will inject the packet as is, back to the P4 pipeline an let the default pipeline to manage the packet. In this case, because the `smac` table will contain an entry, the `MyIngress` control block will ignore the packet and the forwarding will occur using the `dmac`. If we learnt the MAC address of the receiver, then the packet will be forwarded to the correct port. Otherwise, it will be flooded to all ports using the multicast group. Essential for correct flooding is to include in our packet the source port that the packer was originally received. 
+
+To achieve this, we need to define a `@controller_header("packet_out")` annotation in the P4 program, similar to the `@controller_header("packet_in")` annotation we defined earlier. This header will carry the inress port information for the packet being re-injected into the data plane. Once the header is defined, we can move into creating the `PacketOut` message in the controller.
+
+> Step 1: Define the `@controller_header("packet_out")` annotation in the P4 program
+
+To achieve this functionality, we will use the `PacketOut` message type to send packets from the controller to the switch. The `PacketOut` message contains the packet data and the egress port to which the packet should be sent. The controller will need to create a `PacketOut` message for each packet that needs to be re-injected into the data plane and send it to the switch using the `StreamChannel` RPC method. Similar to previous tasks, we will need to modify both our P4 program and the controller code. In the controller, you will need to create a `PacketOut` message for each packet that needs to be re-injected into the data plane. The `PacketOut` message should contain the packet data and the egress port to which the packet should be sent. You can find the relevant section of the `p4runtime.proto` file below:
 
 ```protobuf
+message StreamMessageRequest {
+  oneof update {
+    MasterArbitrationUpdate arbitration = 1;
+    PacketOut packet = 2;
+    DigestListAck digest_ack = 3;
+    .google.protobuf.Any other = 4;
+  }
+}
+
+message PacketOut {
+  bytes payload = 1;
+  // This will be based on P4 header annotated as
+  // @controller_header("packet_out").
+  // At most one P4 header can have this annotation.
+  repeated PacketMetadata metadata = 2;
+}
+
+// Any metadata associated with Packet-IO (controller Packet-In or Packet-Out)
+// needs to be modeled as P4 headers carrying special annotations
+// @controller_header("packet_out") and @controller_header("packet_in")
+// respectively. There can be at most one header each with these annotations.
+// These special headers are captured in P4Info ControllerPacketMetadata.
+message PacketMetadata {
+  // This refers to Metadata.id coming from P4Info ControllerPacketMetadata.
+  uint32 metadata_id = 1;
+  bytes value = 2;
+}
+```
+
+As you see the `PacketOut` message contains a `payload` field, which contains the packet data, and a `metadata` field, which contains the metadata associated with the packet. The metadata is defined using the `PacketMetadata` message, which contains the metadata ID and the metadata value. The metadata ID is defined in the P4 program using the `@controller_header("packet_out")` annotation. The P34 heldpder class provides a helper function to create the `PacketOut` message, which you can find in the `util/p4runtime_lib/helper.py` file. Below is the code of the `buildPacketOut()` helper function:
+
+```python
+# get packetout
+def buildPacketOut(self, payload, metadata=None):
+    packet_out = p4runtime_pb2.PacketOut()
+    packet_out.payload = payload
+    if metadata:
+        packet_out.metadata.extend(
+            [
+                self.get_metadata_pb(metadata_id, value)
+                for metadata_id, value in metadata.items()
+            ]
+        )
+    return packet_out
+}
+```
+
+The metadata parameter is a Python dictionary, where the keys are the metadata IDs and the values are the metadata values. The code creates a `PacketOut` message object, sets the payload field, and for each metadata entry in the dictionary, it adds a `PacketMetadata` message to the `metadata` field.
+
+> Step 2: You Python controller, must create a `PacketOut` message for each packet that needs to be re-injected into the data plane. You can use the `buildPacketOut()` helper function to create the `PacketOut` message. The code should extract the packet data from the `PacketIn` message received from the switch and set it as the payload of the `PacketOut` message. The code should also set the ingress port of the original packet as metadata in the `PacketOut` message, using the metadata ID defined in the P4 program.
+
+Our code edits in the controller and we need now to move to the P4 program. You code changes must update the `MyParser` block to extract the packet out header. You can modify the start transition and based on whether the packet comes from the CPU_PORT or not, you can extract the `packet_out_t` header. Secondly, you need to modify the `MyEgress` control block to use the metadata port number to drop a packet if the packet is being broadcast and the ingress port is the CPU PORT. 
+
+> Step 3: Update the `MyParser` block to extract the `packet_out_t` header when the packet comes from the CPU_PORT and the `MyEgress` control block to drop packets that are being flooded.
+
+Your implementation should now be complete and you should be able to ping between any two hosts with 0% packet loss. You can use Wireshark on the host interfaces to verify that packets are being forwarded correctly. **You can identify yourselves as a P4 developer.**
+
+## Useful Links
+
+* [P4 Language Specification](https://p4.org/p4-spec/docs/P4-16-v1.3.0-spec.html)
+* [P4Runtime API Specification](https://p4.org/p4-spec/docs/P4Runtime-Spec.html)
+* [gRPC Documentation](https://grpc.io/docs/)
+* [Protocol Buffers Documentation](https://developers.google.com/protocol-buffers)
+* [P4 Tutorial](http://github.com/p4lang/tutorials)

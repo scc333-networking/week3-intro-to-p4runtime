@@ -1,1 +1,7 @@
-output/week2.html
+
+output/*
+p4src/build/*
+tmp/*
+*.pyc
+__pycache__/
+.DS_Store
