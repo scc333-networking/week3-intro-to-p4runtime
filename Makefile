@@ -30,9 +30,6 @@ deps: _docker_pull_all
 _start:
 	$(info *** Starting Mininet (${NGSDN_TOPO_PY})... )
 	@NGSDN_TOPO_PY=${NGSDN_TOPO_PY} docker compose -f docker-compose.yml up -d
-	sleep 10
-	$(info *** Loading P4 program on the switch...)
-	PYTHONPATH=${PYTHONPATH} python3 ./util/simple_controller.py -a localhost:50001 -d 1 -p tmp/simple-controller.txt -c mininet/s1-runtime.json
 
 start: NGSDN_TOPO_PY := topo.py
 start: _start

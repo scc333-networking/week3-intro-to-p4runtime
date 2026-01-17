@@ -20,8 +20,8 @@
 import re
 
 import google.protobuf.text_format
-from p4.v1 import p4runtime_pb2
-from p4.config.v1 import p4info_pb2
+from util.lib.p4.v1 import p4runtime_pb2
+from util.lib.p4.config.v1 import p4info_pb2
 
 from .convert import encode
 
@@ -48,9 +48,11 @@ class P4InfoHelper(object):
                     return o
 
         if name:
-            raise AttributeError("Could not find %r of type %s" % (name, entity_type))
+            raise AttributeError(
+                "Could not find %r of type %s" % (name, entity_type))
         else:
-            raise AttributeError("Could not find id %r of type %s" % (id, entity_type))
+            raise AttributeError(
+                "Could not find id %r of type %s" % (id, entity_type))
 
     def get_id(self, entity_type, name):
         return self.get(entity_type, name=name).preamble.id
@@ -76,7 +78,8 @@ class P4InfoHelper(object):
             primitive = m.group(1)
             return lambda id: self.get_name(primitive, id)
 
-        raise AttributeError("%r object has no attribute %r" % (self.__class__, attr))
+        raise AttributeError("%r object has no attribute %r" %
+                             (self.__class__, attr))
 
     def get_match_field(self, table_name, name=None, id=None):
         for t in self.p4info.tables:
@@ -90,7 +93,8 @@ class P4InfoHelper(object):
                         if mf.id == id:
                             return mf
         raise AttributeError(
-            "%r has no attribute %r" % (table_name, name if name is not None else id)
+            "%r has no attribute %r" % (
+                table_name, name if name is not None else id)
         )
 
     def get_match_field_id(self, table_name, match_field_name):
@@ -193,7 +197,8 @@ class P4InfoHelper(object):
         if replicas:
             mc_entry.multicast_group_entry.replicas.extend(
                 [
-                    self.get_replicas_pb(replica["egress_port"], replica["instance"])
+                    self.get_replicas_pb(
+                        replica["egress_port"], replica["instance"])
                     for replica in replicas
                 ]
             )
@@ -230,7 +235,8 @@ class P4InfoHelper(object):
         if match_fields:
             table_entry.match.extend(
                 [
-                    self.get_match_field_pb(table_name, match_field_name, value)
+                    self.get_match_field_pb(
+                        table_name, match_field_name, value)
                     for match_field_name, value in match_fields.items()
                 ]
             )
@@ -244,7 +250,8 @@ class P4InfoHelper(object):
             if action_params:
                 action.params.extend(
                     [
-                        self.get_action_param_pb(action_name, field_name, value)
+                        self.get_action_param_pb(
+                            action_name, field_name, value)
                         for field_name, value in action_params.items()
                     ]
                 )

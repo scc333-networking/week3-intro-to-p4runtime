@@ -17,17 +17,19 @@ from datetime import datetime
 from queue import Queue
 
 import grpc
-from p4.tmp import p4config_pb2
-from p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
+from util.lib.p4.tmp import p4config_pb2
+from util.lib.p4.v1 import p4runtime_pb2, p4runtime_pb2_grpc
 
 MSG_LOG_MAX_LEN = 1024
 
 # List of all active connections
 connections = []
 
+
 def ShutdownAllSwitchConnections():
     for c in connections:
         c.shutdown()
+
 
 class SwitchConnection(object):
 
@@ -43,7 +45,8 @@ class SwitchConnection(object):
             self.channel = grpc.intercept_channel(self.channel, interceptor)
         self.client_stub = p4runtime_pb2_grpc.P4RuntimeStub(self.channel)
         self.requests_stream = IterableQueue()
-        self.stream_msg_resp = self.client_stub.StreamChannel(iter(self.requests_stream))
+        self.stream_msg_resp = self.client_stub.StreamChannel(
+            iter(self.requests_stream))
         self.proto_dump_file = proto_dump_file
         connections.append(self)
 
@@ -66,7 +69,7 @@ class SwitchConnection(object):
         else:
             self.requests_stream.put(request)
             for item in self.stream_msg_resp:
-                return item # just one
+                return item  # just one
 
     def SetForwardingPipelineConfig(self, p4info, dry_run=False, **kwargs):
         device_config = self.buildDeviceConfig(**kwargs)
@@ -148,7 +151,6 @@ class SwitchConnection(object):
             for response in self.client_stub.Read(request):
                 yield response
 
-
     def WritePREEntry(self, pre_entry, dry_run=False):
         request = p4runtime_pb2.WriteRequest()
         request.device_id = self.device_id
@@ -160,6 +162,7 @@ class SwitchConnection(object):
             print("P4Runtime Write:", request)
         else:
             self.client_stub.Write(request)
+
 
 class GrpcRequestLogger(grpc.UnaryUnaryClientInterceptor,
                         grpc.UnaryStreamClientInterceptor):
@@ -189,6 +192,7 @@ class GrpcRequestLogger(grpc.UnaryUnaryClientInterceptor,
     def intercept_unary_stream(self, continuation, client_call_details, request):
         self.log_message(client_call_details.method, request)
         return continuation(client_call_details, request)
+
 
 class IterableQueue(Queue):
     _sentinel = object()

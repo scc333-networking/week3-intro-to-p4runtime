@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from p4.v1 import p4runtime_pb2 as p4_dot_v1_dot_p4runtime__pb2
+from util.lib.p4.v1 import p4runtime_pb2 as p4_dot_v1_dot_p4runtime__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -11,7 +11,8 @@ _version_not_supported = False
 
 try:
     from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+    _version_not_supported = first_version_is_lower(
+        GRPC_VERSION, GRPC_GENERATED_VERSION)
 except ImportError:
     _version_not_supported = True
 
@@ -35,35 +36,35 @@ class P4RuntimeStub(object):
             channel: A grpc.Channel.
         """
         self.Write = channel.unary_unary(
-                '/p4.v1.P4Runtime/Write',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.WriteRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.WriteResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/Write',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.WriteRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.WriteResponse.FromString,
+            _registered_method=True)
         self.Read = channel.unary_stream(
-                '/p4.v1.P4Runtime/Read',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.ReadRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.ReadResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/Read',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.ReadRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.ReadResponse.FromString,
+            _registered_method=True)
         self.SetForwardingPipelineConfig = channel.unary_unary(
-                '/p4.v1.P4Runtime/SetForwardingPipelineConfig',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/SetForwardingPipelineConfig',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigResponse.FromString,
+            _registered_method=True)
         self.GetForwardingPipelineConfig = channel.unary_unary(
-                '/p4.v1.P4Runtime/GetForwardingPipelineConfig',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/GetForwardingPipelineConfig',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigResponse.FromString,
+            _registered_method=True)
         self.StreamChannel = channel.stream_stream(
-                '/p4.v1.P4Runtime/StreamChannel',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/StreamChannel',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageResponse.FromString,
+            _registered_method=True)
         self.Capabilities = channel.unary_unary(
-                '/p4.v1.P4Runtime/Capabilities',
-                request_serializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesRequest.SerializeToString,
-                response_deserializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesResponse.FromString,
-                _registered_method=True)
+            '/p4.v1.P4Runtime/Capabilities',
+            request_serializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesRequest.SerializeToString,
+            response_deserializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesResponse.FromString,
+            _registered_method=True)
 
 
 class P4RuntimeServicer(object):
@@ -122,58 +123,60 @@ class P4RuntimeServicer(object):
 
 def add_P4RuntimeServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'Write': grpc.unary_unary_rpc_method_handler(
-                    servicer.Write,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.WriteRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.WriteResponse.SerializeToString,
-            ),
-            'Read': grpc.unary_stream_rpc_method_handler(
-                    servicer.Read,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.ReadRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.ReadResponse.SerializeToString,
-            ),
-            'SetForwardingPipelineConfig': grpc.unary_unary_rpc_method_handler(
-                    servicer.SetForwardingPipelineConfig,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigResponse.SerializeToString,
-            ),
-            'GetForwardingPipelineConfig': grpc.unary_unary_rpc_method_handler(
-                    servicer.GetForwardingPipelineConfig,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigResponse.SerializeToString,
-            ),
-            'StreamChannel': grpc.stream_stream_rpc_method_handler(
-                    servicer.StreamChannel,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageResponse.SerializeToString,
-            ),
-            'Capabilities': grpc.unary_unary_rpc_method_handler(
-                    servicer.Capabilities,
-                    request_deserializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesRequest.FromString,
-                    response_serializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesResponse.SerializeToString,
-            ),
+        'Write': grpc.unary_unary_rpc_method_handler(
+            servicer.Write,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.WriteRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.WriteResponse.SerializeToString,
+        ),
+        'Read': grpc.unary_stream_rpc_method_handler(
+            servicer.Read,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.ReadRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.ReadResponse.SerializeToString,
+        ),
+        'SetForwardingPipelineConfig': grpc.unary_unary_rpc_method_handler(
+            servicer.SetForwardingPipelineConfig,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.SetForwardingPipelineConfigResponse.SerializeToString,
+        ),
+        'GetForwardingPipelineConfig': grpc.unary_unary_rpc_method_handler(
+            servicer.GetForwardingPipelineConfig,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.GetForwardingPipelineConfigResponse.SerializeToString,
+        ),
+        'StreamChannel': grpc.stream_stream_rpc_method_handler(
+            servicer.StreamChannel,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.StreamMessageResponse.SerializeToString,
+        ),
+        'Capabilities': grpc.unary_unary_rpc_method_handler(
+            servicer.Capabilities,
+            request_deserializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesRequest.FromString,
+            response_serializer=p4_dot_v1_dot_p4runtime__pb2.CapabilitiesResponse.SerializeToString,
+        ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'p4.v1.P4Runtime', rpc_method_handlers)
+        'p4.v1.P4Runtime', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('p4.v1.P4Runtime', rpc_method_handlers)
-
+    server.add_registered_method_handlers(
+        'p4.v1.P4Runtime', rpc_method_handlers)
 
  # This class is part of an EXPERIMENTAL API.
+
+
 class P4Runtime(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
     def Write(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+              target,
+              options=(),
+              channel_credentials=None,
+              call_credentials=None,
+              insecure=False,
+              compression=None,
+              wait_for_ready=None,
+              timeout=None,
+              metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
@@ -192,15 +195,15 @@ class P4Runtime(object):
 
     @staticmethod
     def Read(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+             target,
+             options=(),
+             channel_credentials=None,
+             call_credentials=None,
+             insecure=False,
+             compression=None,
+             wait_for_ready=None,
+             timeout=None,
+             metadata=None):
         return grpc.experimental.unary_stream(
             request,
             target,
@@ -219,15 +222,15 @@ class P4Runtime(object):
 
     @staticmethod
     def SetForwardingPipelineConfig(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+                                    target,
+                                    options=(),
+                                    channel_credentials=None,
+                                    call_credentials=None,
+                                    insecure=False,
+                                    compression=None,
+                                    wait_for_ready=None,
+                                    timeout=None,
+                                    metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
@@ -246,15 +249,15 @@ class P4Runtime(object):
 
     @staticmethod
     def GetForwardingPipelineConfig(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+                                    target,
+                                    options=(),
+                                    channel_credentials=None,
+                                    call_credentials=None,
+                                    insecure=False,
+                                    compression=None,
+                                    wait_for_ready=None,
+                                    timeout=None,
+                                    metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
@@ -273,15 +276,15 @@ class P4Runtime(object):
 
     @staticmethod
     def StreamChannel(request_iterator,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+                      target,
+                      options=(),
+                      channel_credentials=None,
+                      call_credentials=None,
+                      insecure=False,
+                      compression=None,
+                      wait_for_ready=None,
+                      timeout=None,
+                      metadata=None):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
@@ -300,15 +303,15 @@ class P4Runtime(object):
 
     @staticmethod
     def Capabilities(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
+                     target,
+                     options=(),
+                     channel_credentials=None,
+                     call_credentials=None,
+                     insecure=False,
+                     compression=None,
+                     wait_for_ready=None,
+                     timeout=None,
+                     metadata=None):
         return grpc.experimental.unary_unary(
             request,
             target,
