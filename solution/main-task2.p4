@@ -27,17 +27,6 @@ header packet_in_t {
     bit<9> ingress_port;
 }
 
-/*
- * This is a special header for the packet out message.
- * You can set it in your controller using the metadata 
- * element.
- */
-@controller_header("packet_out")
-header packet_out_t {
-    bit<7> pad;
-    bit<9> ingress_port;
-}
-
 struct metadata {
     bit<7> pad;
     bit<9> ingress_port;
@@ -45,7 +34,6 @@ struct metadata {
 
 struct headers {
     packet_in_t packetin;
-    packet_out_t packetout;
     ethernet_t   ethernet;
 }
 
@@ -58,27 +46,10 @@ parser MyParser(packet_in packet,
                 inout metadata meta,
                 inout standard_metadata_t standard_metadata) {
 
-    // state start {
-    //    packet.extract(hdr.ethernet);
-    //    transition accept;
-    // }
     state start {
-        transition select (standard_metadata.ingress_port) {
-            CPU_PORT: parse_controller_packet_out_header;
-            default: parse_ethernet;
-        }
+       packet.extract(hdr.ethernet);
+       transition accept;
     }
-    state parse_controller_packet_out_header {
-        packet.extract(hdr.packetout);
-        packet.extract(hdr.ethernet);
-        log_msg("pad {}, ingress {}",{hdr.packetout.pad, hdr.packetout.ingress_port});
-        transition accept;
-    }
-    state parse_ethernet {
-        packet.extract(hdr.ethernet);
-        transition accept;
-    }
-
 }
 
 /*************************************************************************
@@ -171,10 +142,6 @@ control MyEgress(inout headers hdr,
         if (standard_metadata.egress_port == standard_metadata.ingress_port) {
             drop();
         }
-        if (standard_metadata.ingress_port == CPU_PORT && standard_metadata.egress_port == hdr.packetout.ingress_port) {
-            // log_msg("Suppresss message on port {}",{standard_metadata.egress_port});
-            drop();
-        }
     }
 }
 
@@ -193,8 +160,9 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
 		// parsed headers have to be added again into the packet
-
-        packet.emit(hdr.packetin);
+        if (hdr.packetin.isValid()) {
+            packet.emit(hdr.packetin);
+        }
 		packet.emit(hdr.ethernet);
 	}
 }
