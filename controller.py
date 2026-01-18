@@ -10,7 +10,7 @@ import sys
 from time import sleep
 
 # Scappy imports to support packet parsing. 
-from kamene.all import (
+from scapy.all import (
     Ether,
 )
 
@@ -18,10 +18,10 @@ from kamene.all import (
 # Probably there's a better way of doing this.
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../util/"))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../util/lib/"))
-import p4_cli.bmv2 as bmv2
-from p4_cli.switch import ShutdownAllSwitchConnections
-from p4_cli.convert import encodeNum
-import p4_cli.helper as helper
+import util.lib.p4_cli.bmv2 as bmv2
+from util.lib.p4_cli.switch import ShutdownAllSwitchConnections
+from util.lib.p4_cli.convert import encodeNum
+import util.lib.p4_cli.helper as helper
 
 # def readTableRules(p4info_helper, sw):
 #     """
@@ -81,10 +81,20 @@ def main(p4info_file_path, bmv2_file_path):
             print(e)
             # Forward all packet to the controller (CPU_PORT 255)
 
-        # Step 3: Read all table rules
-        readTableRules(p4info_helper, s1)
-        print("Finished reading.")
+        # Step 3: Create Multicast group entries
+        # Multicast group ID 1: all ports
 
+
+        while True:
+            # Step 4: Read PacketIn messages from the switch
+
+            # Step 5: Parse Ether using Scapy and PacketIn metadata
+
+            # Step 6: Create table entries for dmac and smac tables
+
+            # Step 7: Create PacketOut message and send packet back to switch
+
+            sleep(1)   # This line should be you removed, once PacketIn handling is implemented.
     except KeyboardInterrupt:
         print(" Shutting down.")
     except grpc.RpcError as e:
