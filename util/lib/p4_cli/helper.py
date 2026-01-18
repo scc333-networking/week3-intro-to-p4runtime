@@ -82,8 +82,6 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id must be provided (not both).
         """
-            raise AssertionError("name or id must be None")
-
         for o in getattr(self.p4info, entity_type):
             pre = o.preamble
             if name:
@@ -192,15 +190,15 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id should be provided.
         """
-            pre = t.preamble
-            if pre.name == table_name:
-                for mf in t.match_fields:
-                    if name is not None:
-                        if mf.name == name:
-                            return mf
-                    elif id is not None:
-                        if mf.id == id:
-                            return mf
+        pre = t.preamble
+        if pre.name == table_name:
+            for mf in t.match_fields:
+                if name is not None:
+                    if mf.name == name:
+                        return mf
+                elif id is not None:
+                    if mf.id == id:
+                        return mf
         raise AttributeError(
             "%r has no attribute %r" % (
                 table_name, name if name is not None else id)
@@ -332,15 +330,15 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id should be provided.
         """
-            pre = a.preamble
-            if pre.name == action_name:
-                for p in a.params:
-                    if name is not None:
-                        if p.name == name:
-                            return p
-                    elif id is not None:
-                        if p.id == id:
-                            return p
+        pre = a.preamble
+        if pre.name == action_name:
+            for p in a.params:
+                if name is not None:
+                    if p.name == name:
+                        return p
+                elif id is not None:
+                    if p.id == id:
+                        return p
         raise AttributeError(
             "action %r has no param %r, (has: %r)"
             % (action_name, name if name is not None else id, a.params)

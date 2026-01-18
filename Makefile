@@ -75,6 +75,11 @@ output/lab-handout.html: .resources/metadata.md README.md .resources/pandoc.css
 	# cat .resources/metadata.md README.md | pandoc -s -f markdown+task_lists -t html5 --css .resources/pandoc.css --lua-filter=.resources/enable-checkbox.lua --embed-resources -o output/lab-handout.html
 	docker run -ti --rm -v "`pwd`":/workspace/ scc-registry.lancs.ac.uk/teaching/pandoc_base:latest sh -c "cd /workspace; cat .resources/metadata.md README.md | pandoc -s -f markdown+task_lists -t html5 --css .resources/pandoc.css --lua-filter=.resources/enable-checkbox.lua --embed-resources -o output/lab-handout.html"
 
+docs: util/lib/p4_cli/switch.py util/lib/p4_cli/switch.py
+	mkdir -p docs
+	pip3 install --break-system-packages pdoc
+	PYTHONPATH=$PYTHONPATH:./ pdoc --output-dir ./docs util.lib.p4_cli.switch util.lib.p4_cli.helper
+
 clean:
 	rm -r ./tmp/
 	rm -f output/*.html
