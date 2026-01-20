@@ -135,6 +135,8 @@ class SwitchConnection(object):
         Args:
             dry_run (bool, optional): If True, print request without sending.
                 Defaults to False.
+            election_id (int, optional): Election ID for master arbitration.
+                If None, defaults to (high=0, low=1).
             **kwargs: Additional arguments (unused, for interface compatibility)
         
         Returns:

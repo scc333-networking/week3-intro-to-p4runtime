@@ -82,6 +82,8 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id must be provided (not both).
         """
+        if name is not None and id is not None:
+            raise AssertionError("name or id should be provided, not both")
         for o in getattr(self.p4info, entity_type):
             pre = o.preamble
             if name:
@@ -111,6 +113,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If entity with given name not found
         """
+        return self.get(entity_type, name=name).preamble.id
 
     def get_name(self, entity_type, id):
         """Get the name of an entity by its numeric ID.
@@ -125,6 +128,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If entity with given ID not found
         """
+        return self.get(entity_type, id=id).preamble.name
 
     def get_alias(self, entity_type, id):
         """Get the alias of an entity by its numeric ID.
@@ -139,6 +143,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If entity with given ID not found
         """
+        return self.get(entity_type, id=id).preamble.alias
 
     def __getattr__(self, attr):
         """Enable dynamic convenience methods for name/ID lookups.
@@ -159,6 +164,9 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If method name doesn't match the pattern
         """
+        # Synthesize convenience functions for name to id lookups for top-level entities
+        # e.g. get_tables_id(name_string) or get_actions_id(name_string)
+        m = re.search("^get_(\w+)_id$", attr)
         if m:
             primitive = m.group(1)
             return lambda name: self.get_id(primitive, name)
@@ -190,15 +198,16 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id should be provided.
         """
-        pre = t.preamble
-        if pre.name == table_name:
-            for mf in t.match_fields:
-                if name is not None:
-                    if mf.name == name:
-                        return mf
-                elif id is not None:
-                    if mf.id == id:
-                        return mf
+        for t in self.p4info.tables:
+            pre = t.preamble
+            if pre.name == table_name:
+                for mf in t.match_fields:
+                    if name is not None:
+                        if mf.name == name:
+                            return mf
+                    elif id is not None:
+                        if mf.id == id:
+                            return mf
         raise AttributeError(
             "%r has no attribute %r" % (
                 table_name, name if name is not None else id)
@@ -217,6 +226,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If match field not found
         """
+        return self.get_match_field(table_name, name=match_field_name).id
 
     def get_match_field_name(self, table_name, match_field_id):
         """Get the name of a match field by its ID.
@@ -231,6 +241,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If match field not found
         """
+        return self.get_match_field(table_name, id=match_field_id).name
 
     def get_match_field_pb(self, table_name, match_field_name, value):
         """Build a P4Runtime FieldMatch protobuf for a table match field.
@@ -254,6 +265,7 @@ class P4InfoHelper(object):
         Raises:
             Exception: If match type is unsupported
         """
+        p4info_match = self.get_match_field(table_name, match_field_name)
         bitwidth = p4info_match.bitwidth
         p4runtime_match = p4runtime_pb2.FieldMatch()
         p4runtime_match.field_id = p4info_match.id
@@ -300,6 +312,7 @@ class P4InfoHelper(object):
         Raises:
             Exception: If match type is unsupported
         """
+        match_type = match_field.WhichOneof("field_match_type")
         if match_type == "valid":
             return match_field.valid.value
         elif match_type == "exact":
@@ -330,15 +343,16 @@ class P4InfoHelper(object):
         Note:
             Exactly one of name or id should be provided.
         """
-        pre = a.preamble
-        if pre.name == action_name:
-            for p in a.params:
-                if name is not None:
-                    if p.name == name:
-                        return p
-                elif id is not None:
-                    if p.id == id:
-                        return p
+        for a in self.p4info.actions:
+            pre = a.preamble
+            if pre.name == action_name:
+                for p in a.params:
+                    if name is not None:
+                        if p.name == name:
+                            return p
+                    elif id is not None:
+                        if p.id == id:
+                            return p
         raise AttributeError(
             "action %r has no param %r, (has: %r)"
             % (action_name, name if name is not None else id, a.params)
@@ -357,6 +371,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If parameter not found
         """
+        return self.get_action_param(action_name, name=param_name).id
 
     def get_action_param_name(self, action_name, param_id):
         """Get the name of an action parameter by its ID.
@@ -371,6 +386,7 @@ class P4InfoHelper(object):
         Raises:
             AttributeError: If parameter not found
         """
+        return self.get_action_param(action_name, id=param_id).name
 
     def get_action_param_pb(self, action_name, param_name, value):
         """Build a P4Runtime Action.Param protobuf for an action parameter.
@@ -383,6 +399,7 @@ class P4InfoHelper(object):
         Returns:
             Action.Param: P4Runtime action parameter protobuf
         """
+        p4info_param = self.get_action_param(action_name, param_name)
         p4runtime_param = p4runtime_pb2.Action.Param()
         p4runtime_param.param_id = p4info_param.id
         p4runtime_param.value = encode(value, p4info_param.bitwidth)
@@ -398,6 +415,7 @@ class P4InfoHelper(object):
         Returns:
             Replica: P4Runtime replica configuration protobuf
         """
+        p4runtime_replicas = p4runtime_pb2.Replica()
         p4runtime_replicas.egress_port = egress_port
         p4runtime_replicas.instance = instance
         return p4runtime_replicas
@@ -412,6 +430,7 @@ class P4InfoHelper(object):
         Returns:
             PacketMetadata: P4Runtime packet metadata protobuf
         """
+        p4runtime_metadata = p4runtime_pb2.PacketMetadata()
         p4runtime_metadata.metadata_id = metadata_id
         p4runtime_metadata.value = value
         return p4runtime_metadata
@@ -434,6 +453,7 @@ class P4InfoHelper(object):
             ... ]
             >>> mc_entry = helper.buildMCEntry(1, replicas)
         """
+        mc_entry = p4runtime_pb2.PacketReplicationEngineEntry()
         mc_entry.multicast_group_entry.multicast_group_id = mc_group_id
         if replicas:
             mc_entry.multicast_group_entry.replicas.extend(
@@ -460,6 +480,7 @@ class P4InfoHelper(object):
             >>> metadata = {1: b'\\x00\\x02'}  # Port 2
             >>> packet = helper.buildPacketOut(b'\\x00\\x11\\x22\\x33', metadata)
         """
+        packet_out = p4runtime_pb2.PacketOut()
         packet_out.payload = payload
         if metadata:
             packet_out.metadata.extend(
@@ -507,6 +528,7 @@ class P4InfoHelper(object):
             ...     action_params={"port": 1}
             ... )
         """
+        table_entry = p4runtime_pb2.TableEntry()
         table_entry.table_id = self.get_tables_id(table_name)
 
         if priority is not None:

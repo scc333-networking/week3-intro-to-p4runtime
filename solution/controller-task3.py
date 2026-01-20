@@ -3,58 +3,133 @@
 # TU Delft Embedded and Networked Systems Group.
 # NOTICE: THIS FILE IS BASED ON https://github.com/p4lang/tutorials/tree/master/exercises/p4runtime, BUT WAS MODIFIED UNDER COMPLIANCE
 # WITH THE APACHE 2.0 LICENCE FROM THE ORIGINAL WORK.
+
+# ============================================================================
+# P4Runtime Controller
+# This controller manages P4 switches via the P4Runtime API, handling packet
+# forwarding, table configuration, and host discovery through MAC learning.
+# ============================================================================
+
 import argparse
+from threading import Thread
 import grpc
 import os
 import sys
 from time import sleep
+import json
 
-# Scappy imports to support packet parsing. 
-from kamene.all import (
+# Scapy imports for packet parsing and construction
+from scapy.all import (
     Ether,
 )
 
-# Import P4Runtime lib from parent utils dir
-# Probably there's a better way of doing this.
+# Import P4Runtime library from parent utils directory
+# These libraries provide utilities for P4 switch interaction and protobuf support
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../"))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../util/"))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../util/lib/"))
-import p4_cli.bmv2 as bmv2
-from p4_cli.switch import ShutdownAllSwitchConnections
-from p4_cli.convert import encodeNum
-import p4_cli.helper as helper
+import util.lib.p4_cli.bmv2 as bmv2
+from util.lib.p4_cli.switch import ShutdownAllSwitchConnections
+from util.lib.p4_cli.convert import encodeNum
+import util.lib.p4_cli.helper as helper
 
-# def readTableRules(p4info_helper, sw):
-#     """
-#     Reads the table entries from all tables on the switch.
+# Flask imports for HTTP server to expose controller state
+from flask import Flask, jsonify
 
-#     :param p4info_helper: the P4Info helper
-#     :param sw: the switch connection
-#     """
-#     print('\n----- Reading tables rules for %s -----' % sw.name)
-#     for response in sw.ReadTableEntries():
-#         for entity in response.entities:
-#             entry = entity.table_entry
-#             # TODO For extra credit, you can use the p4info_helper to translate
-#             #      the IDs in the entry to names
-#             print(entry)
-#             print('-----')
+
+# Initialize Flask app for HTTP interface
+app = Flask(__name__)
+
+# Global table to store learned source MAC addresses
+smac_table = []
+
+# ============================================================================
+# HTTP API Endpoints
+# ============================================================================
+
+@app.route('/api/get_hosts', methods=['GET'])
+def get_hosts():
+    """
+    HTTP endpoint to retrieve all discovered hosts.
+    Returns a JSON object containing the list of MAC addresses and count.
+    """
+    global smac_table
+    return jsonify({
+        'hosts': smac_table,
+        'count': len(smac_table)
+    })
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
 
 def printGrpcError(e):
+    """
+    Format and print gRPC errors with detailed information.
+    Includes error message, status code, and file/line number where error occurred.
+    
+    Args:
+        e: The gRPC exception to format
+    """
     print("gRPC Error:", e.details(), end="")
     status_code = e.code()
     print("(%s)" % status_code.name, end="")
     traceback = sys.exc_info()[2]
     print("[%s:%d]" % (traceback.tb_frame.f_code.co_filename, traceback.tb_lineno))
 
+def run_http_server(port=5000):
+    """
+    Run the Flask HTTP server for exposing controller state.
+    
+    Args:
+        port (int): The port number for the HTTP server (default: 5000)
+    """
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-def main(p4info_file_path, bmv2_file_path):
-    # Instantiate a P4Runtime helper from the p4info file. This allows you to convert table and field names into integers which make sense for the GRPC API. 
+
+# Start HTTP server in a separate daemon thread to avoid blocking main thread
+# This allows the HTTP API to run concurrently with the main controller logic
+http_thread = Thread(target=run_http_server, args=(8080,), daemon=True)
+http_thread.start()
+print("HTTP server started on http://0.0.0.0:8080")
+
+
+
+# ============================================================================
+# Main Controller Logic
+# ============================================================================
+
+def main(p4info_file_path, bmv2_file_path, conf_file="mininet/s1-runtime.json"):
+    """
+    Main controller function that manages P4Runtime switch communication.
+    
+    This function:
+    1. Establishes a connection to the P4 switch
+    2. Installs the P4 program on the switch
+    3. Configures forwarding rules and multicast groups
+    4. Handles incoming packets and performs MAC learning
+    
+    Args:
+        p4info_file_path (str): Path to the p4info.txt file generated by p4c
+        bmv2_file_path (str): Path to the bmv2.json file generated by p4c
+        conf_file (str): Path to the JSON configuration file for runtime settings
+    """
+
+    if not os.path.exists(conf_file):
+        print("Configuration file %s not found!" % conf_file)
+        sys.exit(1)
+    
+    conf = json.load(open(conf_file))   
+
+    # Create P4InfoHelper to convert table/field names to integers for gRPC API
+    # This is necessary because the P4Runtime API works with numeric identifiers
     p4info_helper = helper.P4InfoHelper(p4info_file_path)
 
     try:
-        # Create a switch connection object for s1;
-        # this is backed by a P4Runtime gRPC connection.
-        # Also, dump all P4Runtime messages sent to switch to given txt files.
+        # Create a switch connection object for s1
+        # This object provides a P4Runtime gRPC connection to the switch
+        # proto_dump_file logs all P4Runtime messages for debugging purposes
         s1 = bmv2.Bmv2SwitchConnection(
             name="s1",
             address="127.0.0.1:50001",
@@ -62,15 +137,22 @@ def main(p4info_file_path, bmv2_file_path):
             proto_dump_file="p4runtime.log",
         )
 
-        # Step 1: Establish gRPC connection and set master arbitration update
-        # This step establishes this controller as
-        # master (required by P4Runtime before performing any other write operation)
+        # ====================================================================
+        # Step 1: Establish master arbitration with the switch
+        # ====================================================================
+        # This establishes the controller as the master for the switch.
+        # This is required by P4Runtime before performing any write operations.
+        # Only one master controller can manage a switch at a time.
         MasterArbitrationUpdate = s1.MasterArbitrationUpdate()
         print(MasterArbitrationUpdate)
         if MasterArbitrationUpdate == None:
             print("Failed to establish the connection")
 
-        # Step 2: Install the P4 program on the switches
+        # ====================================================================
+        # Step 2: Install the P4 program on the switch
+        # ====================================================================
+        # This sends the compiled P4 program (p4info + bmv2 binary) to the switch
+        # The switch will use this program for all packet processing logic
         try:
             s1.SetForwardingPipelineConfig(
                 p4info=p4info_helper.p4info, bmv2_json_file_path=bmv2_file_path
@@ -79,35 +161,56 @@ def main(p4info_file_path, bmv2_file_path):
         except Exception as e:
             print("Forwarding Pipeline added.")
             print(e)
-            # Forward all packet to the controller (CPU_PORT 255)
 
-        # Step 3: Read all table rules
-        readTableRules(p4info_helper, s1)
-        print("Finished reading.")
-
-        smac = []
-
+        # ====================================================================
+        # Step 3: Configure multicast group entries
+        # ====================================================================
+        # Multicast groups allow a single packet to be replicated to multiple ports
+        # Multicast group ID 1: all ports (used for broadcasting)
+        # Step 3: Write Multicast Group Entries
+        if "multicast_group_entries" in conf:
+            for mc_group in conf["multicast_group_entries"]:
+                mc_group_id = mc_group["multicast_group_id"]
+                replicas = mc_group["replicas"]
+                entry = p4info_helper.buildMCEntry(
+                    mc_group_id, replicas
+                )
+                s1.WritePREEntry(entry)
+                print(
+                    "Installed Multicast Group Entry on s1 with ID %d %s" % (
+                        mc_group_id, replicas)
+                )
+        # ====================================================================
+        # Main event loop
+        # ====================================================================
         while True:
+            global smac_table
+
+            # Step 4: Read PacketIn messages from the switch
+            # PacketIn messages contain packets that require CPU processing
             print("Listening for packets...")
             packetin = s1.PacketIn()  # Packet in!
             print("Got packet in")
             if packetin is not None:
-                print(f"PACKET IN received: {str(packetin)}")
+                # print(f"PACKET IN received: {str(packetin)}")
                 data = packetin.packet.payload
-                print(packetin.packet.metadata)
                 port = int.from_bytes(packetin.packet.metadata[1].value, byteorder='big')
 
-                print("Packet bytes: %s" % len(data))
+                # Step 5: Parse Ethernet frame using Scapy and PacketIn metadata
+                # Extract source/destination MAC and other packet information
                 a = Ether(bytes(data))
-                print(data)
+                if a is not None and a.type != 0x800:
+                    continue  # Ignore non IPv4 packets
+
                 print(f"Received packet: {a.summary()}, port: {port}")
 
                 if a is None or not isinstance(a, Ether):
                     print("Warning: No Ethernet header found")
                     continue
 
-                if a.src not in smac:
-
+                if a.src not in smac_table:
+                    # Step 6: Create table entries for dmac and smac lookup tables
+                    # Perform MAC learning based on incoming packet source address
                     table_entry = p4info_helper.buildTableEntry(
                         table_name="MyIngress.smac",
                         match_fields={"hdr.ethernet.srcAddr": a.src},
@@ -125,31 +228,33 @@ def main(p4info_file_path, bmv2_file_path):
                         action_name="MyIngress.forward",
                         action_params={"egress_port": port},)
                     s1.WriteTableEntry(table_entry) 
-                    smac.append(a.src)
+                    smac_table.append(a.src)
+                    print(f"Added destination MAC {a.src} to dmac table with port {port}")
 
+                    # Step 7: Create PacketOut message and send packet back to switch
+                    # Forward learned packets directly through switch ports
                     packetout = p4info_helper.buildPacketOut(payload=a.build(), metadata={1: encodeNum(0, 7), 2: encodeNum(port, 9)})
                     s1.PacketOut(packetout)
+
                 else:
                     print(f"Source MAC {a.src} already in smac table")
 
-                # packetout = p4info_helper.buildPacketOut(payload=a.build(), metadata={})
-                # res = s1.PacketOut(packetout)
-                # print(f"PACKET OUT sent: {res}")
-                # TODO: You should consider how to computer the result 
-                # and how to transmit the packet as a packet_out. 
-                # Check the file utils/p4_cli/helper.py for support 
-                # functions. The packet parsing is implemented using scappy. 
-                # You can edit directly any field in object a and then
-                # convert it into a byte array using the .build() method.
     except KeyboardInterrupt:
         print(" Shutting down.")
     except grpc.RpcError as e:
+        # Handle gRPC errors (connection issues, API errors, etc.)
         printGrpcError(e)
 
+    # Close all switch connections and clean up resources
     ShutdownAllSwitchConnections()
 
 
+# ============================================================================
+# Entry Point
+# ============================================================================
+
 if __name__ == "__main__":
+    # Parse command-line arguments
     parser = argparse.ArgumentParser(description="P4Runtime Controller")
     parser.add_argument(
         "--p4info",
@@ -165,10 +270,11 @@ if __name__ == "__main__":
         type=str,
         action="store",
         required=False,
-        default="./p4src/build/main.json",
+        default="./p4src/build/bmv2.json",
     )
     args = parser.parse_args()
 
+    # Validate that required input files exist
     if not os.path.exists(args.p4info):
         parser.print_help()
         print("\np4info file %s not found!" % args.p4info)
@@ -177,4 +283,6 @@ if __name__ == "__main__":
         parser.print_help()
         print("\nBMv2 JSON file %s not found!" % args.bmv2_json)
         parser.exit(2)
+    
+    # Start the main controller with the provided configuration files
     main(args.p4info, args.bmv2_json)

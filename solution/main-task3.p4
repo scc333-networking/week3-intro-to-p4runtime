@@ -21,6 +21,9 @@ header ethernet_t {
     bit<16>   etherType;
 }
 
+/*
+ * Header used to carry the input port number for packets sent to the controller
+ */
 @controller_header("packet_in")
 header packet_in_t {
     bit<7> pad;
@@ -38,6 +41,9 @@ header packet_out_t {
     bit<9> ingress_port;
 }
 
+/*
+ * Metadata definition, It should match the packet_out and packet_in headers.
+ */
 struct metadata {
     bit<7> pad;
     bit<9> ingress_port;
@@ -59,11 +65,13 @@ parser MyParser(packet_in packet,
                 inout standard_metadata_t standard_metadata) {
 
     state start {
+        // Check if the packet is from the CPU port and extract the packet_out header
         transition select (standard_metadata.ingress_port) {
             CPU_PORT: parse_controller_packet_out_header;
             default: parse_ethernet;
         }
     }
+
     state parse_controller_packet_out_header {
         packet.extract(hdr.packetout);
         packet.extract(hdr.ethernet);
@@ -94,15 +102,18 @@ control MyIngress(inout headers hdr,
                   inout metadata meta,
                   inout standard_metadata_t standard_metadata) {
 
+    //  Used in dmac to forward packet through port.
     action forward(bit<9> egress_port) {
         standard_metadata.egress_spec = egress_port;
     }
 
+    // Used in smac to send packet to controller.
     action forward_to_cpu() {
         meta.ingress_port = standard_metadata.ingress_port;
         standard_metadata.egress_spec = CPU_PORT;
     }
 
+    // Used as default action in dmac table to broadcast packet.
     action broadcast() {
         standard_metadata.mcast_grp = 1; // Broadcast
     }
@@ -158,15 +169,18 @@ control MyEgress(inout headers hdr,
     }
 
     apply {
-        // log_msg("egress port {}, packet out port {}",{standard_metadata.ingress_port, hdr.packetout.ingress_port});
         if (standard_metadata.egress_port == CPU_PORT) {
-            // send packet to controller
+            // send packet to controller. Enable header first and then store the ingress port
             hdr.packetin.setValid();
             hdr.packetin.ingress_port = meta.ingress_port;
         }
+
+        // Ensure broadcast packets are not sent back to the ingress port
         if (standard_metadata.egress_port == standard_metadata.ingress_port) {
             drop();
         }
+
+        // If the packet is coming from the CPU port, check the ingress port in the packet_out header
         if (standard_metadata.ingress_port == CPU_PORT && standard_metadata.egress_port == hdr.packetout.ingress_port) {
             // log_msg("Suppresss message on port {}",{standard_metadata.egress_port});
             drop();
@@ -189,15 +203,8 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
 		// parsed headers have to be added again into the packet
-
-        if (hdr.packetin.isValid()) {   
-            packet.emit(hdr.packetin);
-        }
-
-        if (hdr.packetout.isValid()) {
-            packet.emit(hdr.packetout);
-        }
-        
+        packet.emit(hdr.packetin);
+        packet.emit(hdr.packetout);
 		packet.emit(hdr.ethernet);
 	}
 }
