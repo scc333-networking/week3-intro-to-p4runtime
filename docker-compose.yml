@@ -1,7 +1,6 @@
 services:
   mininet:
-    # image: mn-stratum 
-    image: "opennetworking/mn-stratum:latest"
+    image: "scc-registry.lancs.ac.uk/teaching/scc_333/mn-stratum:25"
     hostname: mininet
     container_name: mininet
     privileged: true
