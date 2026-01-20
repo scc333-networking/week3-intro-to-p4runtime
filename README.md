@@ -10,15 +10,18 @@ By the end of this activity you will be able to:
 
 ## SDN controllers and Southbound APIs
 
+![Figure 1: SDN architecture with control plane, data plane, and southbound API.](.resources/P4-architecture.png)
+
+
 In Software-Defined Networking (SDN), the control plane is separated from the data plane. The control plane is responsible for making decisions about how packets should be forwarded, while the data plane is responsible for forwarding packets based on the decisions made by the control plane. In the context of P4, the data plane can be defined using the P4 language. Between the control plane and the data plane we typically need an API that allows the control plane to communicate with the data plane devices. This API is called a southbound API.
 
 In our example of a P4 switch, the P4Runtime API is a southbound API that allows a controller to manage and control P4-programmable devices at runtime. The controller then uses the P4Runtime API to install P4 programs, add and remove table entries, and configure switch parameters. In the first lecture of this course, we discussed the OpenFlow protocol, which is an early example of a southbound API. OpenFlow is a widely used southbound API that allows controllers to manage and control network devices. However, OpenFlow is static and assumes that the data plane is fixed and cannot be changed. Nonetheless, the P4 data plane can vary across programs and devices, and thus we need a more flexible southbound API that can adapt to different P4 programs and devices. The P4Runtime API is designed to be flexible and extensible, allowing it to support different P4 programs and devices. To achieve this flexibility, the P4Runtime API is based on gRPC and Protocol Buffers (Protobuf).
 
 ## What is GRPC and Protobuf?
 
-A big challenge in distributed computer systems is the design of communication mechanisms between different components. Through the years a number of Remote Procedure Call (RPC) frameworks have been developed to address this challenge. These frameworks allow a program to call procedures (functions) located on another machine as if they were local function calls. They offer languages and platform-neutral interfaces to define the procedures and their parameters, and they handle the underlying communication details. As a result, the developer can define the protocol details once and then a compiler generates the necessary code to handle the communication between different components for different languages and platforms. This make the development of distributed systems much easier and less error-prone. Google Protocol Buffers (Protobuf) and gRPC are among the latest frameworks that are widely used in the industry.
+A big challenge in distributed computer systems is the design of communication mechanisms between components. Through the years a number of Remote Procedure Call (RPC) frameworks have been developed to address this challenge. These frameworks allow a program to call procedures (functions) on another machine as if they were local function calls. They offer languages and platform-neutral interfaces to define the procedures and their parameters, and they handle the underlying communication details. As a result, the developer can define the protocol details once and then a compiler generates the necessary code to handle the communication between different components for different languages and platforms. This make the development of distributed systems much easier and less error-prone. Google Protocol Buffers (Protobuf) and gRPC are among the latest frameworks that are widely used in the industry.
 
-The protobuf language is a language-neutral, platform-neutral extensible mechanism for serializing structured data. It is used to define the structure of the data that will be exchanged between different components in a distributed system. The protobuf compiler generates code in different languages (e.g., C++, Java, Python) to serialize and deserialize the data. An example of a protobuf definition is shown below:
+The protobuf language is a language-neutral, platform-neutral extensible mechanism for serializing structured data in distributed systems. It is used to define the structure of the data that will be exchanged between different components in a distributed system. The protobuf compiler generates code in different languages (e.g., C++, Java, Python) to serialize and deserialize the data. An example of a protobuf definition is shown below:
 
 ```protobufd greatest frameworks t
 syntax = "proto3";
@@ -141,11 +144,13 @@ message StreamMessageResponse {
 }
 ```
 
+To help you in developing your controller code, we provide a small P4Runtime library in the `util/lib/p4_cli/` directory. This library provides helper functions to connect to a P4 switch, load a P4 program, and read and write different properties of the switch. You can use this library to simplify your controller code and focus on the logic of your application. The code is source for the P4 consrtium lab activities and you can find more information about it [here](http://github.com/p4lang/tutorials). We provide pydocs for the library in the `docs/` directory of this repository. You can open the `index.html` file in your web browser to view the documentation.
+
 ## Task 1: Configure a switch using the P4Runtime API
 
-In the first lab of this module, we revisited how a learning switch works and identified two key functionalities: Flood and MAC learning. Flooding is essential for ensuring that packets reach all possible destinations when the destination MAC address is unknown. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations.
+In the first lab of this module, we revisited how a learning switch works and identified two key functionalities: **Flooding** and **MAC learning**. Flooding is essential in ensuring that packets reach all possible destinations when the destination MAC address is unknown. MAC learning allows the switch to learn the source MAC addresses of incoming packets and associate them with the corresponding switch ports, enabling efficient forwarding of packets to known destinations.
 
-In this first task, we will extend our P4 static switch and add the ability to flood packets to the switch ports. To achieve this, we will need to use the P4Runtime API to configure a multicast group on the switch. A multicast group is a virtual port, to which we can send a packet using the `standard_metadata.mcast_grp` field in the Ingress block. A controller can add multiple switch ports to a multicast group, and the switch will forward packets to all the group ports simultaneously, if `mcast_grp` is set. We will use the `Write` RPC method to create a multicast group entry to the switch's forwarding table.
+In this first task, we will extend our P4 static switch and add the ability to flood packets to the switch ports. To achieve this, we will need to use the P4Runtime API to configure a multicast group on the switch. A multicast group is a virtual port, to which we can send a packet using the `standard_metadata.mcast_grp` field in the `MyIngress` block. A controller can add multiple switch ports to a multicast group, and the switch will forward packets to all the group ports simultaneously, if `mcast_grp` is set. We will use the `Write` RPC method to create a multicast group entry to the switch's forwarding table.
 
 To realize this functionality, we will use the `s1-runtime.json` file provided in this repository. We have already created an entry to hold the required information to create the multicast group. The relevant section of the `s1-runtime.json` file is shown below:
 
@@ -288,7 +293,6 @@ This looks complicated, but don't worry. To create a multicast group on the swit
 The Protobuf compiler generates Python classes for all the Protobuf messages defined in the `p4runtime.proto` file. You can use these classes to create the required messages to create a multicast group on the switch and the code can be found under `util/lib/p4/v1/p4runtime_pb2.py`. We also provide a small helper function, which abstracts further the creation of the protobuf messages. You can find this function in the file `util/lib/p4_cli/helper.py`. We also have a similar file for the P4Runtime API in file `util/lib/p4_cli/switch.py`. Below is the helper function that you can use to create the multicast group entry:
 
 ```python
-# get mc_group_entry
 def buildMCEntry(self, mc_group_id, replicas=None):
     mc_entry = p4runtime_pb2.PacketReplicationEngineEntry()
     mc_entry.multicast_group_entry.multicast_group_id = mc_group_id
@@ -302,9 +306,9 @@ def buildMCEntry(self, mc_group_id, replicas=None):
     return mc_entry
 ```
 
-To create the multicast group on the switch, you can use the `buildMCEntry` helper function. The code creates a `PacketReplicationEngineEntry` message object, to which for each replica defined in the `s1-runtime.json` file, it adds a `Replica` message to the `MulticastGroupEntry` message. `Replicas` is a Python List, to which you can `append()` multiple replicas (or `extend()` with the content of the other lists), each defined as a dictionary with the `egress_port` and `instance` fields.
+To create the multicast group on the switch, you can use the `buildMCEntry()` helper function. The code creates a `PacketReplicationEngineEntry` message object, to which for each replica defined in the `s1-runtime.json` file, it adds a `Replica` message to the `MulticastGroupEntry` message. `Replicas` is a Python List, to which you can `append()` multiple replicas (or `extend()` with the content of the other lists), each defined as a dictionary with the `egress_port` and `instance` fields.
 
-Once the message is created, you can use the `WritePREEntry` RPC method to send the message to the switch. Below is the code of the `WritePREEntry()` method, which you can find in the `util/lib/p4_cli/switch.py` file:
+Once the message is created, you can use the `WritePREEntry()` RPC method to send the message to the switch. Below is the code of the `WritePREEntry()` method, which you can find in the `util/lib/p4_cli/switch.py` file:
 
 ```python
 def WritePREEntry(self, pre_entry, dry_run=False):
@@ -320,7 +324,7 @@ def WritePREEntry(self, pre_entry, dry_run=False):
         self.client_stub.Write(request)
 ```
 
-The `WritePREEntry()` method creates a `WriteRequest` message, sets the device ID and election ID, and adds an `Update` message to the request. The `Update` message is of type `INSERT`, and it contains the `PacketReplicationEngineEntry` message created earlier. Finally, the method sends the `WriteRequest` message to the switch using the `Write` RPC method.
+The `WritePREEntry()` method creates a `WriteRequest` message, sets the device ID and election ID (Unique IDs of the switch and the controller), and adds an `Update` message to the request. The `Update` message is of type `INSERT`, and it contains the `PacketReplicationEngineEntry` message created earlier. Finally, the method sends the `WriteRequest` message to the switch using the `Write` RPC method.
 
 > Step 1: Extend your P4 program to create a multicast group including all switch ports. 
 
@@ -344,17 +348,11 @@ The switch implementation from last week, relies on a single table to forward pa
 
 > Task 2: Add an smac table in the MyIngress stage. The table should implement a default action called `learn`, which will set the egress_port to CPU_PORT. You should also modify the apply code of the block. A packet must first be looked up in the `smac` table. If a match is found (smac.apply().hit is true), then the packet should also be looked up in the dmac table for a forwarding action and sent to the next stage of the pipeline. If the MAC is not found in smac, then no further actions should be applied to the packet, so that the packet is sent to the next stage.
 
-Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets. To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method. This can be achieved using the special port number 255 or the constant CPU_PORT.
-
-To effectively learn the new MAC address, we need to also create a new custom header, which will be send to the controller, containing the ingress_port of the packet. We explain how this functionality works in the next subsection.
+Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets. To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method. This can be achieved using the special port number 255 or the constant CPU_PORT. To effectively learn the new MAC address, we need to also create a new custom header, which will be send to the controller, containing the ingress_port of the packet. We explain how this functionality works in the next subsection.
 
 ### Understanding Controller Headers: Packet-In and Packet-Out
 
-Before we proceed, it's important to understand how packets are exchanged between the P4 controller and the P4 data plane. The P4Runtime API provides a mechanism for bidirectional packet I/O between the controller and the switch using special controller headers.
-
-#### What are Controller Headers?
-
-A **controller header** is a special P4 header that is annotated with the `@controller_header` annotation. These headers carry metadata between the P4 data plane and the controller, enabling communication about packet processing decisions. Their definition is not different from the Ethernet packet and you can define the individual fields using the same syntax. The new header **should** be included in the headers structure. Controller headers are unique in that they are only meaningful at the boundary between the data plane and the control plane—they are not part of the actual packet forwarding on the network.
+Before we proceed, it's important to understand how packets are exchanged between the P4 controller and the P4 data plane. The P4Runtime API provides a mechanism for bidirectional packet I/O between the controller and the switch using special controller headers. A **controller header** is a special P4 header that is annotated with the `@controller_header` annotation. These headers carry metadata between the P4 data plane and the controller, enabling communication about packet processing decisions. Their definition is not different from the Ethernet packet and you can define the individual fields using the same syntax. The new header **should** be included in the headers structure. Controller headers are unique in that they are only meaningful at the boundary between the data plane and the control plane—they are not part of the actual packet forwarding on the network.
 
 There are two types of controller headers:
 
@@ -378,9 +376,20 @@ header packet_out_t {
     bit<7> p,,ad;
     bit<9> egress_port;   // The port where the packet should be sent
 }
+
+struct metadata {
+  bit<7> pad;
+  bit<9> egress_port;
+}
+
+struct headers {
+    ethernet_t ethernet;
+    packet_in_t packet_in_hdr;   // Packet-In header
+    packet_out_t packet_out_hdr; // Packet-Out header
+};
 ```
 
-In order include the header in a packet, we need first to user the header structure and call the setValid() function in any control block, e.g. as part of the learn action you can add the following line:
+In order to include the header in a packet, we need first to user the header structure and call the setValid() function in any control block, e.g. as part of the learn action you can add the following line:
 
 ```p4
 headers.packet_in_hdr.setValid();
@@ -389,9 +398,7 @@ headers.packet_in_hdr.setValid();
 and the in the deparser block you need to add the header to the packet:
 
 ```p4 
-if (headers.packet_in_hdr.isValid()) {
-    packet.emit(headers.packet_in_hdr);
-}
+packet.emit(headers.packet_in_hdr);
 ```
 
 #### How They Work Together
@@ -405,12 +412,13 @@ if (headers.packet_in_hdr.isValid()) {
 - At most **one header** can be annotated with `@controller_header("packet_in")`
 - At most **one header** can be annotated with `@controller_header("packet_out")`
 - These headers are automatically handled by P4Runtime and are not part of the normal packet processing pipeline
+- The fields in these headers must be defined in the `metadata` structure to ensure proper mapping between the data plane and control plane 
 
 > Step 3: Define a `@controller_header("packet_in")` annotation in the P4 program to carry the ingress port information for packets sent to the controller. Create a corresponding metadata structure field in your P4 program with the same layout as the packet_in header. Modify the controller code to handle `PacketIn` messages, extract the ingress port from the controller header, and use this information to learn MAC addresses and add entries to the forwarding table. Update the `metadata structure` to contain the same fields as the PacketIn header. Make sure the P4 program sets the `ingress_port` field in the `packet_in` header when sending packets to the controller and that the header is set to valid before sending the packet to the CPU port.
 
 > Step 4: Update the MyDeparse code to emit the packet_in header if it is valid.
 
-The final step now is to process the packet in in your controller code. If you have carefully studied the `p4runtime.proto` file, you will notice that the `PacketIn` message is send using the `StreamChannel` RPC method, as a possible content of a `StreamMessageResponse` message. Furthermore, the `StreamChannel` method definion is slightly different from the `Write` and `Read` methods, since the input parameter and the return value are defined as streams, which means that both the controller and the switch can send multiple messages asynchronously. You can consider this method as a long-lived connection between the controller and the switch, where both sides can send and receive messages at any time. You can imagine this as two [`IterableQueue`](http://docs/python/library/queue.html#queue.IterableQueue), one for sending messages from the controller to the switch and another for sending messages from the switch to the controller. The controller can read messages from the switch by iterating over the incoming stream, and it can send messages to the switch by writing to the outgoing stream.
+The final step now is to process the packet in in your controller code. If you have carefully studied the `p4runtime.proto` file, you will notice that the `PacketIn` message is send using the `StreamChannel` RPC method, as a possible content of a `StreamMessageResponse` message. Furthermore, the `StreamChannel` method definion is slightly different from the `Write` and `Read` methods, since the input parameter and the return value are defined as streams, which means that both the controller and the switch can send multiple messages asynchronously. You can consider this method as a long-lived connection between the controller and the switch, where both sides can send and receive messages at any time. You can imagine this as two [`Queue`](https://docs.python.org/3/library/queue.html), one for sending messages from the controller to the switch and another for sending messages from the switch to the controller. The controller can read messages from the switch by iterating over the incoming stream, and it can send messages to the switch by writing to the outgoing stream.
 
 The `util/lib/switch.py` file provides a `PacketIn()` method that allows you to read `PacketIn` messages from the P4Runtime channel. Calling the `PacketIn()` method will block and wait until a new `PacketIn` message is received from the switch. You can build a loop in your controller code to continuously read `PacketIn` messages from the switch and process them accordingly.
 
