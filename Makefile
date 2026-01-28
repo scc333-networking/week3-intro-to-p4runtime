@@ -13,6 +13,7 @@ P4RT_SH_SHA := sha256:6ae50afb5bde620acb9473ce6cd7b990ff6cc63fe4113cf5584c8e38fe
 STRATUM_BMV2_SHA := sha256:f31faa5e83abbb2d9cf39d28b3578f6e113225641337ec7d16d867b0667524ef
 
 NGSDN_TOPO_PY := topo.py
+P4_CONTROLLER_PY := controller.py
 
 default:
 	$(error Please specify a make target (see README.md))
@@ -28,11 +29,12 @@ _docker_pull_all:
 deps: _docker_pull_all
 
 _start:
-	$(info *** Starting Mininet (${NGSDN_TOPO_PY})... )
+	$(info *** Starting Mininet in the background (${NGSDN_TOPO_PY})... )
 	@NGSDN_TOPO_PY=${NGSDN_TOPO_PY} docker compose -f docker-compose.yml up -d
 
 start: NGSDN_TOPO_PY := topo.py
 start: _start
+start: p4-controller
 
 stop: NGSDN_TOPO_PY := topo.py
 stop: _stop
@@ -49,6 +51,11 @@ mn-cli:
 
 mn-log:
 	docker logs -f mininet
+
+p4-controller:
+	$(info *** Starting P4 Runtime controller...)
+	$(info *** To stop the server, kill it with Ctrl-C)
+	@PYTHONPATH=${PYTHONPATH} python3 ${P4_CONTROLLER_PY}
 
 p4-build: p4src/main.p4
 	$(info *** Building P4 program...)
@@ -83,4 +90,6 @@ docs: util/lib/p4_cli/switch.py util/lib/p4_cli/switch.py
 clean:
 	rm -r ./tmp/
 	rm -f output/*.html
+	rm -f p4src/build/**
+	find . \( -name "__pycache__" -o -name "*.pyc" -o -name "*.pyo" \) -exec rm -rf {} +
 	rmdir -p output 2>/dev/null || true
