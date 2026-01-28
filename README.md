@@ -17,13 +17,13 @@ In Software-Defined Networking (SDN), the control plane is separated from the da
 
 In our example of a P4 switch, the P4Runtime API is a southbound API that allows a controller to manage and control P4-programmable devices at runtime. The controller then uses the P4Runtime API to install P4 programs, add and remove table entries, and configure switch parameters. In the first lecture of this course, we discussed the OpenFlow protocol, which is an early example of a southbound API. OpenFlow is a widely used southbound API that allows controllers to manage and control network devices. However, OpenFlow is static and assumes that the data plane is fixed and cannot be changed. Nonetheless, the P4 data plane can vary across programs and devices, and thus we need a more flexible southbound API that can adapt to different P4 programs and devices. The P4Runtime API is designed to be flexible and extensible, allowing it to support different P4 programs and devices. To achieve this flexibility, the P4Runtime API is based on gRPC and Protocol Buffers (Protobuf).
 
-## What is GRPC and Protobuf?
+## What is gRPC and Protobuf?
 
 A big challenge in distributed computer systems is the design of communication mechanisms between components. Through the years a number of Remote Procedure Call (RPC) frameworks have been developed to address this challenge. These frameworks allow a program to call procedures (functions) on another machine as if they were local function calls. They offer languages and platform-neutral interfaces to define the procedures and their parameters, and they handle the underlying communication details. As a result, the developer can define the protocol details once and then a compiler generates the necessary code to handle the communication between different components for different languages and platforms. This make the development of distributed systems much easier and less error-prone. Google Protocol Buffers (Protobuf) and gRPC are among the latest frameworks that are widely used in the industry.
 
 The protobuf language is a language-neutral, platform-neutral extensible mechanism for serializing structured data in distributed systems. It is used to define the structure of the data that will be exchanged between different components in a distributed system. The protobuf compiler generates code in different languages (e.g., C++, Java, Python) to serialize and deserialize the data. An example of a protobuf definition is shown below:
 
-```protobufd greatest frameworks t
+```protobuf
 syntax = "proto3";
 message Person {
   string name = 1;
@@ -42,7 +42,7 @@ message PersonResponse {
 
 You can use this code snippet and the protobuf compiler to generate Python classes to serialize and deserialize the `Person` message in different languages. The P4 language uses protobuf to define the structure of P4 tables and other P4 constructs, and the users can use any language to interact with P4-programmable devices. You can find more information about protobuf [here](https://developers.google.com/protocol-buffers), while the P4 protobuf definitions can be found as part of this repository in ``p4runtime/proto/p4/v1/p4runtime.proto``. Protobuf is primarily designed to describe the structure of the messages exchanged between different components. However, it does not provide a mechanism for defining the procedures (functions) that will be called remotely. This is where gRPC comes in.
 
-gRPC builds on protobuf to realize a high-performance, open-source universal RPC framework that can run in any environment. It enables client and server applications to communicate transparently, and makes it easier to build connected systems. gRPC uses protobuf to define the structure of the messages exchanged between the client and server, as well as the procedures that can be called remotely. Using this specifications, a developer can build code for any programming language, that allows the to implement client and servers without the need to write the low-level socket code. An example of a gRPC service definition is shown below:
+gRPC builds on protobuf to realize a high-performance, open-source universal RPC framework that can run in any environment. gRPC is the language-independent Interface Definition Language (IDL) that enables client and server applications to communicate transparently, and makes it easier to build connected systems. gRPC uses protobuf to define the structure of the messages exchanged between the client and server, as well as the procedures that can be called remotely. Using this specifications, a developer can build code for any programming language, that allows developers to implement client and servers without the need to write the low-level socket code. An example of a gRPC service definition is shown below:
 
 ```protobuf
 service PersonService {
@@ -57,25 +57,23 @@ In this scenario, the `PersonService` defines two RPC methods: `GetPerson` and `
 
 The P4Runtime API is a gRPC-based API that allows a controller to manage and control P4-programmable devices at runtime. The P4Runtime API is defined using Protobuf, and it provides a set of RPC methods that can be used to interact with P4-programmable devices. The P4Runtime API is defined in the `p4runtime.proto` file, which can be found in the `p4runtime/proto/p4/v1/` directory of this repository.
 
-The P4Runtime API provides a set of RPC methods that can be used to perform various operations on P4-programmable devices. The RPC methods of the P4runtime service are defined in the file `proto/p4/v1/p4runtime.proto`  and are shown below:
+The P4Runtime API provides a set of RPC methods that can be used to perform various operations on P4-programmable devices. The RPC methods of the P4runtime service are defined in the afformentioned file (`proto/p4/v1/p4runtime.proto`)  and are shown below:
 
 ```protobuf
 service P4Runtime {
   // Update one or more P4 entities on the target.
-  rpc Write(WriteRequest) returns (WriteResponse) {
-  }
+  rpc Write(WriteRequest) returns (WriteResponse);
+
   // Read one or more P4 entities from the target.
-  rpc Read(ReadRequest) returns (stream ReadResponse) {
-  }
+  rpc Read(ReadRequest) returns (stream ReadResponse);
 
   // Sets the P4 forwarding-pipeline config.
   rpc SetForwardingPipelineConfig(SetForwardingPipelineConfigRequest)
-      returns (SetForwardingPipelineConfigResponse) {
-  }
+      returns (SetForwardingPipelineConfigResponse);
+
   // Gets the current P4 forwarding-pipeline config.
   rpc GetForwardingPipelineConfig(GetForwardingPipelineConfigRequest)
-      returns (GetForwardingPipelineConfigResponse) {
-  }
+      returns (GetForwardingPipelineConfigResponse);
 
   // Represents the bidirectional stream between the controller and the
   // switch (initiated by the controller), and is managed for the following
@@ -88,11 +86,9 @@ service P4Runtime {
   // - the controller sending/receiving packets to/from the switch
   // - streaming of notifications from the switch
   rpc StreamChannel(stream StreamMessageRequest)
-      returns (stream StreamMessageResponse) {
-  }
+      returns (stream StreamMessageResponse);
 
-  rpc Capabilities(CapabilitiesRequest) returns (CapabilitiesResponse) {
-  }
+  rpc Capabilities(CapabilitiesRequest) returns (CapabilitiesResponse);
 }
 ```
 
@@ -181,7 +177,7 @@ To realize this functionality, we will use the `s1-runtime.json` file provided i
 }
 ```
 
-In order to understand the multicast group on the switch we need to study the protobuf definition of the `Write` RCP call and the `PacketReplicationEngineEntry` message, which is used to define multicast groups on the switch. The relevant section of the `p4runtime.proto` file is shown below:
+In order to understand the multicast group on the switch we need to study the protobuf definition of the `Write` RPC call and the `PacketReplicationEngineEntry` message, which is used to define multicast groups on the switch. The relevant section of the `p4runtime.proto` file is shown below:
 
 ```protobuf
 
@@ -348,7 +344,7 @@ The switch implementation from last week, relies on a single table to forward pa
 
 > Task 2: Add an smac table in the MyIngress stage. The table should implement a default action called `learn`, which will set the egress_port to CPU_PORT. You should also modify the apply code of the block. A packet must first be looked up in the `smac` table. If a match is found (smac.apply().hit is true), then the packet should also be looked up in the dmac table for a forwarding action and sent to the next stage of the pipeline. If the MAC is not found in smac, then no further actions should be applied to the packet, so that the packet is sent to the next stage.
 
-Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets. To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method. This can be achieved using the special port number 255 or the constant CPU_PORT. To effectively learn the new MAC address, we need to also create a new custom header, which will be send to the controller, containing the ingress_port of the packet. We explain how this functionality works in the next subsection.
+Packet reception from the switch is essential to implement our MAC learning functionality, i.e. to learn the source incoming port of unknown source  MAC addresses in incoming packets. To implement this functionality, we will need to modify both our P4 program and the controller code. In the P4 program, we will need to add a new table in the ingress control block to match on the destination MAC address of incoming packets and forward them to the corresponding switch port. If the destination MAC address is not found in the table, the switch will send a `PacketIn` message to the controller using the `StreamChannel` RPC method. This can be achieved using the special port number 255 or the constant CPU_PORT. To effectively learn the new MAC address, we need to also create a new custom header, which will be sent to the controller, containing the ingress_port of the packet. We explain how this functionality works in the next subsection.
 
 ### Understanding Controller Headers: Packet-In and Packet-Out
 
