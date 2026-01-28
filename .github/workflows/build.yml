@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Build HTML from README
-        run: cat .resources/metadata.md README.md | pandoc -s -f markdown+task_lists -t html5 --css .resources/pandoc.css --lua-filter=.resources/enable-checkbox.lua --embed-resources -o output/lab-handout.html
+        run: mkdir -p output && cat .resources/metadata.md README.md | pandoc -s -f markdown+task_lists -t html5 --css .resources/pandoc.css --lua-filter=.resources/enable-checkbox.lua --embed-resources -o output/lab-handout.html
       
       - name: Upload HTML artifact
         uses: actions/upload-artifact@v4
